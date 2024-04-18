@@ -1,0 +1,178 @@
+---
+title: "Homework 9"
+author:
+- Isaiah Benny
+- "EID: ieb357"
+date: "2024-04-18"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.height=3, fig.width=5, warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=60), echo = FALSE, message = FALSE, fig.align = 'center')
+```
+
+```{r}
+library(tidyverse)
+library(mosaic)
+library(MatchIt)
+library(knitr)
+```
+
+# [Github](https://github.com/isaiahbenny/SDS315-HW9)
+
+---
+
+# Problem 1
+
+## Part A
+```{r}
+turnout <- read.csv("turnout.csv")
+
+# GOTV_call = 1
+call_and_vote <- prop(voted1998 ~ GOTV_call, data=turnout)[2] %>% unname()
+
+
+# GOTV_call = 0
+no_call_and_vote <- prop(voted1998 ~ GOTV_call, data=turnout)[1] %>% unname()
+
+
+test <- prop.test(voted1998 ~ GOTV_call, data=turnout, success=1)
+
+# Multiply the interval by -1 to turn (no GOTV_call - GOTV call) into (GOTV_call - no GOTV call)
+upper <- -1 * test[["conf.int"]][1]
+
+lower <- -1 * test[["conf.int"]][2]
+```
+The proportion of those receiving a GOTV call who voted in 1998 is `r call_and_vote %>% round(3)`. The proportion of those not receiving a GOTV call who voted in 1998 is `r no_call_and_vote %>% round(3)`.
+
+The confidence interval for the difference in these proportions of voting in 1998 (GOTV call - no GOTV call) is [`r lower %>% round(3)`, `r upper %>% round(3)`]
+
+
+## Part B
+```{r}
+#voted1996
+
+# Correlation with voted1998
+turnout %>% group_by(voted1996) %>% summarize(prop(~voted1998) %>% round(3)) %>% kable(col.names = c("Voted in 1996", "Proportion Who Voted in 1998"))
+
+# Correlation with GOTV_call
+turnout %>% group_by(voted1996) %>% summarize(prop(~GOTV_call) %>% round(3)) %>% kable(col.names = c("Voted in 1996", "Proportion Who Received a Call"))
+
+```
+
+These tables above show that an individual who voted in 1996 is more likely to vote in 1998 and is more likely to have received a GOTV call. Thus, since voting in 1996 is correlated with the treatment and the outcome, it is a confounder.
+
+```{r}
+#Age
+
+# Correlation with voted1998
+ggplot(turnout) + geom_boxplot(aes(x=AGE, y=factor(voted1998))) + xlab("Age") + ylab("Voted in 1998")
+
+
+# Correlation with GOTV_call
+ggplot(turnout) + geom_boxplot(aes(y=factor(GOTV_call), x=AGE)) + xlab("Age") + ylab("Received a GOTV Call")
+
+```
+
+These boxplots show that those who voted in 1998 tend to be older than those who didn't, and that those who received a GOTV call tend to be older than those who didn't. Therefore, age is a confounding variable, since it is correlated with both voting in 1998 and receiving a GOTV call.
+\newpage
+
+
+```{r, message=F}
+#Major party
+
+# Correlation with voted1998
+turnout %>% group_by(MAJORPTY, voted1998) %>% summarize(n = n()) %>% mutate(prop = (n / sum(n)) %>% round(3)) %>% kable()
+
+# Correlation with GOTV_call
+turnout %>% group_by(MAJORPTY, GOTV_call) %>% summarize(n = n()) %>% mutate(prop = (n / sum(n)) %>% round(3)) %>% kable()
+```
+
+These tables show that voters who were a part of a major party were more likely to voted in 1998 and slightly more likely to have received a GOTV call, making MAJORPTY a confounding variable.
+
+
+## Part C
+
+To show that these variables are no longer confounders, we need to show that they are not correlated with the treatment variable.
+
+```{r, message=F}
+turnout_match <- matchit(GOTV_call ~ voted1996 + AGE + MAJORPTY, data=turnout, ratio = 5)
+
+turnout_matched <- match.data(turnout_match)
+
+# Recreate the previous tables and boxplot with matched data
+turnout_matched %>% group_by(voted1996) %>% summarize(prop(~GOTV_call) %>% round(3)) %>% kable(col.names = c("Voted in 1996", "Proportion Who Received a Call"))
+
+ggplot(turnout_matched) + geom_boxplot(aes(y=factor(GOTV_call), x=AGE)) + xlab("Age") + ylab("Received a GOTV Call")
+```
+\newpage
+```{r}
+turnout_matched %>% group_by(MAJORPTY, GOTV_call) %>% summarize(n = n()) %>% mutate(prop = (n / sum(n)) %>% round(3)) %>% kable()
+
+```
+
+The two tables and the boxplots show that the variables that were confounders in the original dataset no longer correlate with receiving a GOTV call in the matched dataset. This is because a change in the value of each variable is associated with no change in the proportion of those who received a GOTV call.
+
+
+```{r}
+# GOTV_call = 1
+match_call_and_vote <- prop(voted1998~GOTV_call, data=turnout_matched)[2] %>% unname()
+
+# GOTV_call = 0
+match_no_call_and_vote <- prop(voted1998~GOTV_call, data=turnout_matched)[1] %>% unname()
+
+match_test <- prop.test(voted1998 ~ GOTV_call, data=turnout_matched, success = 1)
+
+# Multiply the interval by -1 to get (GOTV_call - no GOTV call)
+match_upper <- -1 * match_test[["conf.int"]][1]
+
+match_lower <- -1 * match_test[["conf.int"]][2]
+```
+Using the matched data, the proportion of those receiving a GOTV call who voted in 1998 is `r match_call_and_vote %>% round(3)` and the proportion of those not receiving a GOTV call who voted in 1998 is `r match_no_call_and_vote %>% round(3)`.
+
+The confidence interval for the difference in these proportions (GOTV call - no GOTV call) is [`r match_lower %>% round(3)`, `r match_upper %>% round(3)`]
+
+With this confidence interval, we can conclude that receiving a GOTV call likely has increased the chance of voting in 1998, since the interval only contains positive values. However, this effect is not nearly as strong as the original confidence interval implied. In fact, GOTV calls may have a negligible effect on one's likelihood of voting in 1998, since the confidence interval contains values that are close to 0. 
+
+\newpage
+
+# Problem 2
+
+## Part A
+```{r}
+solder <- read.csv("solder.csv")
+
+ggplot(solder) + geom_boxplot(aes(x=factor(Opening), y=skips)) + xlab("Opening") + ylab("Skips") + ggtitle("Number of Skips by Size of Opening")
+
+```
+
+This plot shows the number of solder skips for each opening size (large, medium, and small). The solder skips tend to increase as the size decreases.
+
+```{r}
+ggplot(solder) + geom_boxplot(aes(x=factor(Solder), y=skips)) + xlab("Solder Thickness") + ylab("Skips") + ggtitle("Number of Solder Skips by Solder Thickness")
+```
+
+This plot shows the number of solder skips for each solder thickness (thick or thin). Thinner alloys tend to have more skips.
+
+\newpage
+
+## Part B
+
+```{r}
+lm_solder <- lm(skips ~ Opening + Solder + Opening:Solder, data=solder)
+
+# Add the estimates along with the confidence intervals
+confint(lm_solder) %>% round(2) %>% data.frame() %>% mutate(estimate = lm_solder$coefficients[row.names.data.frame(.)] %>% round(2)) %>% kable(col.names = c("lower", "upper", "estimate"), caption = "95% Confidence Interval for Each Coefficient")
+
+```
+
+## Part C
+
+The intercept represents the baseline solder skips for solder guns with large openings and thick alloys and is 0.39 skips. The main effect of a medium sized opening is 2.41 additional skips from the baseline. The effect of a small opening in isolation is 5.13 skips. The effect of using a thin alloy for soldering in isolation is an additional 2.28 skips from the baseline. The interaction effect of a medium sized opening and thin soldering alloy is -0.74 skips; a setup that uses a medium sized opening and a thin soldering alloy has .74 skips less than the sum of the individual effects. The interaction effect between a small opening and a thin soldering alloy is 9.65 skips. That is, when both a small opening and a thin alloy are used, there is an additional 9.65 skips added to the sum of the individual effects. 
+
+
+## Part D
+
+The combination that I would recommend would be the baseline, which is a large opening with a thick soldering alloy. This is because the baseline leads to the minimum value in the linear model, which is 0.39. Any other combination of size openings and thickness would lead to a number of average skips that is higher than 0.39.
